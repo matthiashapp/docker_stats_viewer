@@ -1,3 +1,4 @@
+// Endpoint to run the stats script on demand
 package main
 
 import (
@@ -380,17 +381,52 @@ const htmlTemplate = `
 <head>
     <title>Docker Stats Viewer</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; cursor: pointer; user-select: none; }
-        th:hover { background-color: #e6e6e6; }
-        select { padding: 5px; margin: 10px 0; }
-        .stats-summary { background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px; }
-        .high-usage { background-color: #ffe6e6; }
-        .medium-usage { background-color: #fff3cd; }
-        
-        /* Modal styles */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+        }
+        th, td {
+            border: 1px solid #333;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #333;
+            cursor: pointer;
+            user-select: none;
+        }
+        th:hover {
+            background-color: #444;
+        }
+        select {
+            padding: 5px;
+            margin: 10px 0;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            border: 1px solid #333;
+        }
+        .stats-summary {
+            background: #1e1e1e;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #333;
+        }
+        .high-usage {
+            background-color: #ff5252;
+        }
+        .medium-usage {
+            background-color: #ffb74d;
+        }
         .modal {
             display: none;
             position: fixed;
@@ -399,17 +435,18 @@ const htmlTemplate = `
             top: 0;
             width: 100%;
             height: 100%;
-            background-color: #fff;
+            background-color: rgba(0, 0, 0, 0.8);
             overflow-y: auto;
         }
         .modal-content {
-            background-color: #fefefe;
+            background-color: #1e1e1e;
             margin: 0;
             padding: 20px;
             width: 100%;
             height: 100%;
             position: relative;
             box-sizing: border-box;
+            color: #e0e0e0;
         }
         .close {
             color: #aaa;
@@ -420,8 +457,8 @@ const htmlTemplate = `
             position: fixed;
             right: 25px;
             top: 20px;
-            background: #fff;
-            border: 2px solid #ddd;
+            background: #333;
+            border: 2px solid #555;
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -432,44 +469,29 @@ const htmlTemplate = `
         }
         .close:hover,
         .close:focus {
-            color: black;
+            color: white;
         }
         .clickable-id {
-            color: #007bff;
+            color: #64b5f6;
             cursor: pointer;
             text-decoration: underline;
         }
         .clickable-id:hover {
-            color: #0056b3;
+            color: #42a5f5;
         }
         .loading {
             text-align: center;
             padding: 20px;
         }
-        .comparison-table {
-            width: 100%;
-            margin-top: 10px;
-            font-size: 14px;
-        }
-        .comparison-table th {
-            background-color: #e9ecef;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-        .comparison-table td {
-            padding: 6px 8px;
-        }
-        .metric-high { color: #dc3545; font-weight: bold; }
-        .metric-medium { color: #fd7e14; }
-        .metric-low { color: #28a745; }
     </style>
 </head>
 <body>
     <h1>Docker Stats Viewer</h1>
     
-    <div style="margin-bottom: 20px;">
-        <a href="/summary" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">View Summary Report</a>
+    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
+        <a href="/summary" style="background: #64b5f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Summary Report</a>
+        <button id="runScriptBtn" style="background: #43a047; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Run Stats Script</button>
+        <span id="runScriptStatus" style="margin-left: 10px;"></span>
     </div>
     
     <div class="stats-summary">
@@ -491,8 +513,8 @@ const htmlTemplate = `
 
     <div style="margin: 10px 0;">
         <label for="searchInput">Search by container name:</label>
-        <input type="text" id="searchInput" placeholder="Enter container name..." onkeyup="filterTable()" style="padding: 5px; margin-left: 10px; width: 250px;">
-        <button onclick="clearSearch()" style="margin-left: 5px; padding: 5px 10px;">Clear</button>
+        <input type="text" id="searchInput" placeholder="Enter container name..." onkeyup="filterTable()" style="padding: 5px; margin-left: 10px; width: 250px; background-color: #1e1e1e; color: #e0e0e0; border: 1px solid #333;">
+        <button onclick="clearSearch()" style="margin-left: 5px; padding: 5px 10px; background-color: #64b5f6; color: white; border: none; border-radius: 3px;">Clear</button>
     </div>
 
     <table id="statsTable">
@@ -535,6 +557,31 @@ const htmlTemplate = `
     </div>
 
     <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const btn = document.getElementById('runScriptBtn');
+            const status = document.getElementById('runScriptStatus');
+            if (btn) {
+                btn.onclick = async function() {
+                    status.textContent = 'Running...';
+                    status.style.color = '#ffb74d';
+                    try {
+                        const resp = await fetch('/api/run-script', {method: 'POST'});
+                        const data = await resp.json();
+                        if (data.success) {
+                            status.textContent = 'Script ran successfully!';
+                            status.style.color = '#43a047';
+                            setTimeout(() => location.reload(), 800);
+                        } else {
+                            status.textContent = 'Error: ' + (data.error || 'Unknown error');
+                            status.style.color = '#ff5252';
+                        }
+                    } catch (e) {
+                        status.textContent = 'Request failed';
+                        status.style.color = '#ff5252';
+                    }
+                }
+            }
+        });
         let sortDirection = {};
         
         function sortTable(columnIndex) {
@@ -711,25 +758,26 @@ const containerPageTemplate = `
 <head>
     <title>Container Details - {{.ContainerName}}</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #121212; color: #e0e0e0; }
         .back-link { 
             display: inline-block; 
             margin-bottom: 20px; 
-            color: #007bff; 
+            color: #64b5f6; 
             text-decoration: none; 
             padding: 8px 15px;
-            border: 1px solid #007bff;
+            border: 1px solid #64b5f6;
             border-radius: 4px;
         }
         .back-link:hover { 
-            background-color: #007bff; 
+            background-color: #64b5f6; 
             color: white; 
         }
         .container-info { 
-            background: #f8f9fa; 
+            background: #1e1e1e; 
             padding: 20px; 
             border-radius: 5px; 
             margin-bottom: 30px; 
+            border: 1px solid #333;
         }
         .stats-grid { 
             display: grid; 
@@ -738,22 +786,25 @@ const containerPageTemplate = `
             margin-bottom: 30px; 
         }
         .stats-card { 
-            background: #f8f9fa; 
+            background: #1e1e1e; 
             padding: 20px; 
             border-radius: 5px; 
+            border: 1px solid #333;
         }
         table { 
             border-collapse: collapse; 
             width: 100%; 
             margin-top: 20px; 
+            background-color: #1e1e1e;
+            color: #e0e0e0;
         }
         th, td { 
-            border: 1px solid #ddd; 
+            border: 1px solid #333; 
             padding: 8px; 
             text-align: left; 
         }
         th { 
-            background-color: #e9ecef; 
+            background-color: #333; 
             position: sticky; 
             top: 0; 
             z-index: 10; 
@@ -765,7 +816,7 @@ const containerPageTemplate = `
             text-align: center;
             padding: 40px;
             color: #6c757d;
-            background: #f8f9fa;
+            background: #1e1e1e;
             border-radius: 5px;
         }
     </style>
@@ -843,38 +894,41 @@ const summaryPageTemplate = `
 <head>
     <title>Container Summary - All Files Analysis</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #121212; color: #e0e0e0; }
         .back-link { 
             display: inline-block; 
             margin-bottom: 20px; 
-            color: #007bff; 
+            color: #64b5f6; 
             text-decoration: none; 
             padding: 8px 15px;
-            border: 1px solid #007bff;
+            border: 1px solid #64b5f6;
             border-radius: 4px;
         }
         .back-link:hover { 
-            background-color: #007bff; 
+            background-color: #64b5f6; 
             color: white; 
         }
         .summary-info { 
-            background: #f8f9fa; 
+            background: #1e1e1e; 
             padding: 20px; 
             border-radius: 5px; 
             margin-bottom: 30px; 
+            border: 1px solid #333;
         }
         table { 
             border-collapse: collapse; 
             width: 100%; 
             margin-top: 20px; 
+            background-color: #1e1e1e;
+            color: #e0e0e0;
         }
         th, td { 
-            border: 1px solid #ddd; 
+            border: 1px solid #333; 
             padding: 8px; 
             text-align: left; 
         }
         th { 
-            background-color: #f2f2f2; 
+            background-color: #333; 
             cursor: pointer; 
             user-select: none;
             position: sticky; 
@@ -882,7 +936,7 @@ const summaryPageTemplate = `
             z-index: 10; 
         }
         th:hover { 
-            background-color: #e6e6e6; 
+            background-color: #444; 
         }
         .metric-high { 
             background-color: #f8d7da; 
@@ -898,12 +952,12 @@ const summaryPageTemplate = `
             color: #0c5460; 
         }
         .clickable-id {
-            color: #007bff;
+            color: #64b5f6;
             cursor: pointer;
             text-decoration: underline;
         }
         .clickable-id:hover {
-            color: #0056b3;
+            color: #42a5f5;
         }
         .search-container {
             margin: 10px 0;
@@ -912,10 +966,17 @@ const summaryPageTemplate = `
             padding: 5px;
             margin-left: 10px;
             width: 250px;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            border: 1px solid #333;
         }
         .search-container button {
             margin-left: 5px;
             padding: 5px 10px;
+            background-color: #64b5f6;
+            color: white;
+            border: none;
+            border-radius: 3px;
         }
         .stats-summary {
             display: grid;
@@ -924,19 +985,20 @@ const summaryPageTemplate = `
             margin-bottom: 20px;
         }
         .stats-card {
-            background: #f8f9fa;
+            background: #1e1e1e;
             padding: 15px;
             border-radius: 5px;
             text-align: center;
+            border: 1px solid #333;
         }
         .stats-card h3 {
             margin-top: 0;
-            color: #495057;
+            color: #e0e0e0;
         }
         .stats-value {
             font-size: 24px;
             font-weight: bold;
-            color: #007bff;
+            color: #64b5f6;
         }
     </style>
 </head>
@@ -1273,6 +1335,33 @@ func main() {
 			http.Error(w, "Error rendering template", http.StatusInternalServerError)
 			log.Printf("Template error: %v", err)
 		}
+	})
+
+	http.HandleFunc("/api/run-script", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		cmd := exec.Command("bash", "run.sh")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "{\"success\":false,\"error\":%q,\"output\":%q}", err.Error(), string(output))
+			return
+		}
+		fmt.Fprintf(w, "{\"success\":true,\"output\":%q}", string(output))
+		log.Println("Refreshing stats files...")
+		newStatsFiles, err := loadAllStatsFiles("stats/")
+		if err != nil {
+			log.Printf("Error refreshing stats files: %v", err)
+		}
+		if len(newStatsFiles) == 0 {
+			log.Println("No JSON stats files found in stats/ directory")
+		}
+		statsFiles = newStatsFiles
+		fmt.Printf("Refreshed %d stats files\n", len(statsFiles))
+		// Update server data
+		serverData.Files = statsFiles
 	})
 
 	port := "8080"
